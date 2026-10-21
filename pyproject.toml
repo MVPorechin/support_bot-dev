@@ -1,0 +1,81 @@
+[project]
+name = "support_bot"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+# ==========================================
+# RUFF — быстрый линтер (заменяет flake8, isort, pyupgrade)
+# ==========================================
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["bot", "services", "db", "config.py", "main.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (импорты)
+    "N",     # pep8-naming
+    "UP",    # pyupgrade (современный синтаксис)
+    "B",     # flake8-bugbear (частые баги)
+    "A",     # flake8-builtins (переопределения builtins)
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "RUF001",  # кириллица в строках
+    "RUF002",  # кириллица в docstrings
+    "RUF003",  # кириллица в комментариях
+    "E501",    # line too long (управляется line-length)
+    "B008",    # Do not perform function calls in argument defaults (для FastAPI Depends)
+    "RUF012",  # mutable class attributes (для SQLAlchemy models)
+
+]
+
+# Автоматическое исправление
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["bot", "services", "db", "config"]
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # разрешить неиспользуемые импорты в __init__
+"tests/*" = ["S101"]      # разрешить assert в тестах
+
+# ==========================================
+# MYPY — проверка типов
+# ==========================================
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+ignore_missing_imports = true
+
+# Исключения для специфичных модулей
+[[tool.mypy.overrides]]
+module = [
+    "pybotx.*",
+    "sqlalchemy.*",
+    "asyncpg.*",
+    "redis.*",
+]
+ignore_missing_imports = true
+
+# Для моделей SQLAlchemy можно ослабить проверки
+[[tool.mypy.overrides]]
+module = "db.tickets.models"
+disallow_untyped_defs = false

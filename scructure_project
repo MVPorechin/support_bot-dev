@@ -1,0 +1,31 @@
+support_bot/
+│
+├── config.py                    # переменные окружения (BotConfig, DBConfig)
+├── main.py                      # точка входа (FastAPI + pybotx + фоновые задачи)
+├── CA1.crt                      # сертификат сервера ботов (Express)
+├── ca-bundle.crt                # корневые сертификаты
+├── docker_compose.yml           # конфигурация сервисов (бот, БД, Redis)
+├── Dockerfile                   # сборка образа бота
+├── init.sql                     # инициализация таблиц БД
+├── requirements.txt             # зависимости Python
+├── .env                         # 🔒 секреты (НЕ коммитить в Git!)
+├── .gitignore                   # исключения для Git
+├── README.md                    # документация проекта
+│
+├── bot/                         # 🤖 слой бота (pybotx)
+│   ├── __init__.py
+│   ├── collector.py             # обработчики команд (/start, /take, /solved, ...)
+│   └── ticket_middleware.py     # middleware: маршрутизация, создание тикетов
+│
+├── services/                    # ⚙️ бизнес-логика
+│   ├── __init__.py
+│   ├── ticket_service.py        # работа с тикетами (создание, назначение, пересылка)
+│   └── support_service.py       # работа со специалистами (статусы online/offline)
+│
+├── db/                          # 🗄️ слой данных
+│   ├── __init__.py
+│   ├── sqlalchemy.py            # движок, сессии, Base
+│   └── tickets/
+│       ├── __init__.py
+│       ├── models.py            # ORM-модели (Ticket, Support, enums)
+│       └── repo.py              # репозитории (TicketRepo, SupportRepo)

@@ -1,0 +1,200 @@
+services:
+  nginx:
+    image: nexus.isb/nginx:1.27-alpine
+    container_name: support_nginx
+    ports:
+      - "443:443"
+      - "8008:8008"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - support_bot
+      - supervisor_bot
+    restart: always
+    networks:
+      - support_bot_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+  # ── Миграции ─────────────────────────────────────────────
+  migrate:
+    build: .
+    container_name: support_migrate
+    command: alembic upgrade head
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    restart: "no"
+    networks:
+      - support_bot_network
+
+  # ── Бот поддержки (N воркеров) ───────────────────────────
+  support_bot:
+    build: .
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
+    container_name: support_bot
+    command: >
+      gunicorn main_support:app
+      --workers 1
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --forwarded-allow-ips="*"
+      --timeout 120
+      --graceful-timeout 30
+      --access-logfile -
+      --error-logfile -
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    expose:
+      - "8000"
+    restart: always
+    networks:
+      - support_bot_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "10"
+
+  # ── Бот супервизора (1-2 воркера) ────────────────────────
+  supervisor_bot:
+    build: .
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8008/health', timeout=3).status == 200 else 1)"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
+    container_name: supervisor_bot
+    command: >
+      gunicorn main_supervisor:app
+      --workers 1
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8008
+      --forwarded-allow-ips="*"
+      --timeout 120
+      --graceful-timeout 30
+      --access-logfile -
+      --error-logfile -
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    expose:
+      - "8008"
+    restart: always
+    networks:
+      - support_bot_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "10"
+
+  # ── Фоновые задачи (1 экземпляр) ─────────────────────────
+  support_worker:
+    build: .
+    container_name: support_worker
+    command: python main_worker.py
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f main_worker.py || exit 1" ]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+    networks:
+      - support_bot_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "10"
+
+  # ── Остальное как было ───────────────────────────────────
+  db:
+    image: nexus.isb/postgres:15.3-alpine
+    container_name: ${POSTGRES_DB}
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    networks:
+      - support_bot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: nexus.isb/redis:7-alpine
+    container_name: support_redis
+    env_file:
+      - .env
+    command: ["redis-server", "--appendonly", "yes", "--save", "60 1"]
+    ports:
+      - "6378:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - support_bot_network
+
+networks:
+  support_bot_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
